@@ -49,7 +49,7 @@ export const getWeightsOfAllIndexTokens = async (address: string): Promise<Recor
     return weights;
 }
 
-export const getIndexedTokensData = async (address: string): Promise<{address: string, tvl: number, share: number}[]> => {
+export const getIndexedTokensData = async (address: string): Promise<{indexPrice: number, tokens: {address: string, tvl: number, share: number}[]}> => {
     const tokens = await viemClient.readContract({
         address: address as any,
         abi: IndexTokenAbi,
@@ -57,6 +57,7 @@ export const getIndexedTokensData = async (address: string): Promise<{address: s
     }) as string[];
 
     const price = await getTokenPriceAndMarketCapByAddress(tokens);
+    let indexPrice: number = 0;
     const data: {address: string, tvl: number, share: number}[] = [];
     for (const token of tokens) {
         const weight = await getWeightOfTokenInIndex(address, token);
@@ -65,8 +66,9 @@ export const getIndexedTokensData = async (address: string): Promise<{address: s
             tvl: weight * price[token]['usd'],
             share: weight * 100
         })
+        indexPrice += weight * price[token]['usd'];
     }
-    return data;
+    return {indexPrice, tokens: data};
 
 }
 
@@ -86,4 +88,19 @@ export const getIndexPriceOfIndex = async (address: string): Promise<number> => 
     }
 
     return indexPrice;
+}
+
+
+export const getUserRelatedDataOfIndexToken = async (token: string, user: string) => {
+    const indexedTokenBalance = await viemClient.readContract({
+        address: token as any,
+        abi: IndexTokenAbi,
+        functionName: 'balanceOf',
+        args: [user]
+    }) as bigint;
+    //TODO: Add collectibleIndexToken fetch
+
+    return {
+        indexedTokenBalance: Number(indexedTokenBalance) / decimalPlace
+    }
 }
