@@ -49,6 +49,27 @@ export const getWeightsOfAllIndexTokens = async (address: string): Promise<Recor
     return weights;
 }
 
+export const getIndexedTokensData = async (address: string): Promise<{address: string, tvl: number, share: number}[]> => {
+    const tokens = await viemClient.readContract({
+        address: address as any,
+        abi: IndexTokenAbi,
+        functionName: 'getTokens'
+    }) as string[];
+
+    const price = await getTokenPriceAndMarketCapByAddress(tokens);
+    const data: {address: string, tvl: number, share: number}[] = [];
+    for (const token of tokens) {
+        const weight = await getWeightOfTokenInIndex(address, token);
+        data.push({
+            address: token,
+            tvl: weight * price[token]['usd'],
+            share: weight * 100
+        })
+    }
+    return data;
+
+}
+
 
 export const getIndexPriceOfIndex = async (address: string): Promise<number> => {
     const tokens = await viemClient.readContract({
