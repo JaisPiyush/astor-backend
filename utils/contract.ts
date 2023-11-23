@@ -64,5 +64,5 @@ export const getIndexPriceOfIndex = async (address: string): Promise<number> => 
        indexPrice += weight * price[token]['usd']
     }
 
-    return indexPrice / decimalPlace;
+    return indexPrice;
 }
