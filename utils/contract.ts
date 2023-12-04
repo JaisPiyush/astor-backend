@@ -1,7 +1,13 @@
 import { IndexTokenAbi } from '@/abi/IndexTokenAbi';
-import { createPublicClient, http, toHex } from 'viem';
-import { polygonMumbai } from 'viem/chains'
+import { createPublicClient, encodeFunctionData, http, toHex } from 'viem';
+import { base, polygonMumbai } from 'viem/chains'
 import { getTokenPriceAndMarketCapByAddress } from './client';
+import { ICashPoolAbi } from '@/abi/ICashPool';
+import { IRouterAbi } from '@/abi/IRouter';
+import { ethers } from 'ethers';
+import { swapRouters } from './constants';
+
+export type Address = `0x${string}`;
 
 export const getViewClient = () => {
     const client = createPublicClient({
@@ -103,4 +109,104 @@ export const getUserRelatedDataOfIndexToken = async (token: string, user: string
     return {
         indexedTokenBalance: Number(indexedTokenBalance) / decimalPlace
     }
+}
+
+
+export const getAllTokensOfIndexPool = async (address: `0x${string}`): Promise<string[]> => {
+    const tokens = await viemClient.readContract({
+        address: address,
+        abi: IndexTokenAbi,
+        functionName: 'getTokens'
+    }) as string[];
+    return tokens;
+}
+
+
+/// -------------- CASH POOL --------------------------------------------------------------------///
+
+export const getCurrentNonceOfCashPool = async (address: string): Promise<number> => {
+    const currentTxnNonce = await viemClient.readContract({
+        address: address as any,
+        abi: ICashPoolAbi,
+        functionName: 'currentTxnNonce'
+    }) as bigint;
+    return Number(currentTxnNonce);
+}
+
+export const getCurrentPoolTokenAmount = async (address: string, nonce?: number): Promise<number> => {
+    if (nonce === undefined) {
+        nonce = await getCurrentNonceOfCashPool(address);
+    }
+    const balance = await viemClient.readContract({
+        address: address as any,
+        abi: ICashPoolAbi,
+        functionName: 'currentPoolBaseTokenAmountPerNonce',
+        args: [nonce]
+    }) as bigint;
+    return Number(balance);
+}
+
+export const getExchangeData = async (pool: Address): Promise<string> => {
+    const indexTokenAddress = await viemClient.readContract({
+        address: pool,
+        abi: ICashPoolAbi,
+        functionName: 'indexToken'
+    }) as Address;
+    const router = swapRouters[0];
+
+    const tokens = await viemClient.readContract({
+        address: indexTokenAddress,
+        abi: IndexTokenAbi,
+        functionName: 'getTokens'
+    }) as Address[];
+    const currentTxnNonce = await viemClient.readContract({
+        address: pool,
+        abi: ICashPoolAbi,
+        functionName: 'currentTxnNonce'
+    }) as bigint;
+    const baseTokenPooled = await viemClient.readContract({
+        address: pool,
+        abi: ICashPoolAbi,
+        functionName: 'currentPoolBaseTokenAmountPerNonce',
+        args: [currentTxnNonce - BigInt(1)]
+    }) as bigint;
+    const routers: Address[] = [];
+    const amountsOut: bigint[] = [];
+    const approvedUSDT: bigint[] = [];
+    for (const token of tokens) {
+        const weight = await viemClient.readContract({
+            address: indexTokenAddress,
+            abi: IndexTokenAbi,
+            functionName: 'weights',
+            args:[token]
+        }) as bigint;
+        const price = await viemClient.readContract({
+            address: router,
+            abi: IRouterAbi,
+            functionName: 'tokenPricePerUSDToken',
+            args: [token]
+        }) as bigint;
+        const amountIn = (weight * baseTokenPooled);
+        const _amountOut = (amountIn/price) * BigInt(10**18);
+        routers.push(router);
+        amountsOut.push(_amountOut);
+        approvedUSDT.push(amountIn);
+
+    }
+
+    const abiCoder = new ethers.AbiCoder();
+    const data = abiCoder.encode(['address[]', 'address[]', 'uint256[]', 'uint256[]'], [tokens, routers, amountsOut, approvedUSDT]);
+    return data;
+}
+
+
+/// ---------------------------------Router --------------------------------------------------------///
+export const getQuoteFromRouter = async (router: `0x${string}`, token: `0x${string}`, amount: number): Promise<number> => {
+    const quote = await viemClient.readContract({
+        address: router,
+        abi: IRouterAbi,
+        functionName: 'quote',
+        args: [token, amount]
+    }) as bigint;
+    return Number(quote) / decimalPlace;
 }
